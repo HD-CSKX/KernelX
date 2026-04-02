@@ -1,0 +1,45 @@
+use alloc::vec::Vec;
+
+use crate::kernel::ipc::{KSiFields, SiCode, SignalNum, SignalSet};
+use crate::kernel::scheduler::Tid;
+use crate::kernel::errno::SysResult;
+
+#[derive(Clone, Copy, Debug)]
+pub struct PendingSignal {
+    pub signum: SignalNum,
+    pub si_code: SiCode,
+    pub fields: KSiFields,
+    pub dest: Option<Tid>,
+}
+
+pub struct PendingSignalQueue {
+    pending: Vec<PendingSignal>
+}
+
+impl PendingSignalQueue {
+    pub fn new() -> Self {
+        PendingSignalQueue {
+            pending: Vec::new(),
+        }
+    }
+
+    pub fn add_pending(&mut self, pending: PendingSignal) -> SysResult<()> {
+        self.pending.push(pending);
+        Ok(())
+    }
+
+    pub fn pop_pending(&mut self, mask: SignalSet, tid: Tid) -> Option<PendingSignal> {
+        let mut index = None;
+        for (i, signal) in self.pending.iter().enumerate() {
+            if (!signal.signum.is_masked(mask) || signal.signum.is_unignorable()) && (signal.dest == Some(tid) || signal.dest.is_none()) {
+                index = Some(i);
+                break;
+            }
+        }
+        if let Some(i) = index {
+            Some(self.pending.remove(i))
+        } else {
+            None
+        }
+    }
+}

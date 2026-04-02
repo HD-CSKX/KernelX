@@ -1,0 +1,78 @@
+use alloc::sync::Arc;
+use downcast_rs::{DowncastSync, impl_downcast};
+
+use crate::fs::file::FileFlags;
+use crate::kernel::event::{FileEvent, PollEventSet};
+use crate::kernel::errno::{Errno, SysResult};
+use crate::kernel::mm::AddrSpace;
+use crate::kernel::mm::ubuf::UAddrSpaceBuffer;
+use crate::kernel::uapi::FileStat;
+use crate::fs::{Dentry, InodeOps};
+
+pub enum SeekWhence {
+    BEG,
+    CUR,
+    END,
+}
+
+pub trait FileOps: DowncastSync {
+    fn read(&self, buf: &mut [u8]) -> SysResult<usize>;
+    fn pread(&self, buf: &mut [u8], offset: usize) -> SysResult<usize>;
+    fn write(&self, buf: &[u8]) -> SysResult<usize>;
+    fn pwrite(&self, buf: &[u8], offset: usize) -> SysResult<usize>;
+    
+    fn read_to_user(&self, ubuf: &UAddrSpaceBuffer) -> SysResult<usize> {
+        let mut total_read = 0;
+        for kbuf in ubuf.iter() {
+            let kbuf = kbuf?;
+            let n = self.read(kbuf)?;
+            total_read += n;
+            if n < kbuf.len() {
+                return Ok(total_read);
+            }
+        }
+        Ok(total_read)
+    }
+    
+    fn write_from_user(&self, ubuf: &UAddrSpaceBuffer) -> SysResult<usize> {
+        let mut total_written = 0;
+        for kbuf in ubuf.iter() {
+            let kbuf = kbuf?;
+            let n = self.write(kbuf)?;
+            total_written += n;
+            if n < kbuf.len() {
+                return Ok(total_written);
+            }
+        }
+
+        Ok(total_written)
+    }
+
+    fn readable(&self) -> bool;
+    fn writable(&self) -> bool;
+    
+    fn seek(&self, offset: isize, whence: SeekWhence) -> SysResult<usize>;
+    fn ioctl(&self, _request: usize, _arg: usize, _addrspace: &AddrSpace) -> SysResult<usize> {
+        Err(Errno::ENOSYS)
+    }
+    fn fstat(&self) -> SysResult<FileStat>;
+    fn fsync(&self) -> SysResult<()>;
+    
+    fn get_inode(&self) -> Option<&Arc<dyn InodeOps>>;
+    fn get_dentry(&self) -> Option<&Arc<Dentry>>;
+
+    fn wait_event(&self, _waker: usize, _event: PollEventSet) -> SysResult<Option<FileEvent>> {
+        Ok(None)
+    }
+    fn wait_event_cancel(&self) {}
+
+    fn set_flags(&self, flags: FileFlags) {
+        let _ = flags;
+    }
+
+    fn type_name(&self) -> &'static str {
+        "unknown"
+    }
+}
+
+impl_downcast!(sync FileOps);

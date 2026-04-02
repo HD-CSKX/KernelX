@@ -1,0 +1,258 @@
+#
+# KernelX Configuration
+#
+
+mainmenu "KernelX Kernel Configuration"
+
+config KERNELX_VERSION
+	string
+	default "5.0"
+
+menu "Platform Configuration"
+
+choice
+	prompt "Target Architecture"
+	default RISCV64
+	help
+	  Select the target architecture for KernelX kernel.
+
+config RISCV64
+	bool "RISC-V 64-bit"
+	help
+	  Support for RISC-V 64-bit architecture.
+
+endchoice
+
+config ARCH
+	string
+	default "riscv" if RISCV64
+	help
+	  Target architecture for the kernel.
+	  Automatically selected based on the chosen platform.
+
+config ARCH_BITS
+	int
+	default 64 if RISCV64
+	help
+	  Architecture bit width (32 or 64).
+	  Automatically selected based on the chosen platform.
+
+config CROSS_COMPILE
+	string "Cross-compiler prefix"
+	default "riscv64-unknown-elf-"
+	help
+	  Prefix for cross-compilation tools (e.g., riscv64-unknown-elf-).
+
+config SYSROOT
+	string "Sysroot path"
+	default ""
+	help
+	  Path to the sysroot directory, passed to clang via --sysroot.
+	  Used for clib and other C code compilation.
+
+config RUST_TARGET
+	string
+	default "riscv64gc-unknown-none-elf"
+	help
+	  Rust target specification for compilation.
+
+endmenu
+
+menu "Build Configuration"
+
+choice
+	prompt "Compilation Mode"
+	default COMPILE_MODE_DEBUG
+	help
+	  Select the compilation mode for the kernel.
+
+config COMPILE_MODE_DEBUG
+	bool "Debug"
+	help
+	  Build kernel with debug information and no optimizations.
+	  Suitable for development and debugging.
+
+config COMPILE_MODE_RELEASE
+	bool "Release"
+	help
+	  Build kernel with optimizations enabled.
+	  Suitable for production use.
+
+endchoice
+
+config COMPILE_MODE
+	string
+	default "debug" if COMPILE_MODE_DEBUG
+	default "release" if COMPILE_MODE_RELEASE
+
+config NO_SMP
+	bool "No-SMP mode (single CPU)"
+	default y if QEMU_CPUS = 1
+	default n
+	help
+	  Disable SMP support. Enables the no-smp Cargo feature, which removes
+	  multi-core synchronization overhead. Set this when targeting a
+	  single-CPU system or emulator configuration.
+
+config NOLOCK
+	bool "No-lock mode"
+	depends on NO_SMP=y
+	default n
+	help
+	  Disable all locking in SpinLock and SleepLock. Both types become
+	  thin wrappers over UnsafeCell with zero synchronization overhead.
+	  Only safe on single-CPU (no-smp) systems. Enabling this implicitly
+	  activates the no-smp Cargo feature.
+
+endmenu
+
+menu "Debug Configuration"
+
+choice
+	prompt "Log Level"
+	default LOG_LEVEL_TRACE
+	help
+	  Select the maximum log level for kernel messages.
+
+config LOG_LEVEL_TRACE
+	bool "Trace"
+	help
+	  Enable all log messages including trace level.
+	  Most verbose logging option.
+
+config LOG_LEVEL_DEBUG
+	bool "Debug"
+	help
+	  Enable debug, info, warn and error messages.
+
+config LOG_LEVEL_INFO
+	bool "Info"
+	help
+	  Enable info, warn and error messages.
+
+config LOG_LEVEL_WARN
+	bool "Warn"
+	help
+	  Enable warn and error messages only.
+
+config LOG_LEVEL_SYSCALL
+	bool "Syscall Trace"
+	help
+	  Enable trace level logging with syscall tracing.
+	  Very verbose, includes all system call traces.
+
+endchoice
+
+config LOG_LEVEL
+	string
+	default "trace" if LOG_LEVEL_TRACE
+	default "debug" if LOG_LEVEL_DEBUG
+	default "info" if LOG_LEVEL_INFO
+	default "warn" if LOG_LEVEL_WARN
+
+config LOG_SYSCALL
+	bool "Enable Syscall Tracing"
+	default n
+	help
+	  Enable detailed tracing of all system calls.
+
+config WARN_UNIMPLEMENTED_SYSCALL
+	bool "Warn on Unimplemented Syscalls"
+	default y
+	help
+	  Enable warnings for unimplemented syscalls.
+
+config BACKTRACE
+	bool "Enable Stack Backtrace"
+	default y if COMPILE_MODE_DEBUG
+	default n if COMPILE_MODE_RELEASE
+	help
+	  Enable stack backtrace on kernel panic.
+	  Embeds a symbol table into the kernel image for function name resolution.
+	  Requires force-frame-pointers=yes (set automatically).
+
+config DEADLOCK_DETECT
+	bool "Enable deadlock detection"
+	default n
+	help
+	  Enable runtime deadlock detection for SpinLock and SleepLock.
+	  Enables the deadlock-detect Cargo feature. Adds overhead; intended
+	  for debug builds only.
+
+endmenu
+
+menu "Experimental Features"
+
+config ENABLE_SWAP_MEMORY
+	bool "Enable Swap Memory"
+	default n
+	help
+	  Enable swap memory support in the kernel.
+	  This feature allows the kernel to swap memory pages to disk when physical memory is low.
+
+endmenu
+
+menu "QEMU Configuration"
+
+config QEMU_MACHINE
+	string "QEMU machine type"
+	default "virt"
+	help
+	  QEMU machine type for virtualization.
+
+config QEMU_MEMORY
+	string "QEMU memory size"
+	default "256M"
+	help
+	  Amount of memory to allocate for QEMU virtual machine.
+
+config QEMU_CPUS
+	int "Number of CPUs"
+	range 1 8
+	default 1
+	help
+	  Number of CPU cores for QEMU virtual machine.
+
+config DISK_IMAGE
+	string "Disk image path"
+	default "./sdcard-rv.img"
+	help
+	  Path to the disk image file used as storage.
+
+config INITPATH
+	string "Init process path"
+	default "/init"
+	help
+	  Path to the init process executable.
+
+config INITARGS
+	string "Init process arguments"
+	default ""
+	help
+	  Additional arguments to pass to the init process.
+
+config INITCWD
+	string "Init process working directory"
+	default "/"
+	help
+	  Working directory for the init process.
+
+config ROOT_FS_TYPE
+	string "Root filesystem type"
+	default "ext4"
+	help
+	  Filesystem type for the root filesystem.
+
+config ROOT_DEVICE
+	string "Root device name"
+	default "virtio_block0"
+	help
+	  Device path for the root filesystem.
+
+config BOOTARGS
+	string "Additional boot arguments"
+	default ""
+	help
+	  Additional kernel boot arguments.
+
+endmenu

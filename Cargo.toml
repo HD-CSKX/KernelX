@@ -1,0 +1,46 @@
+[package]
+name = "kernelx"
+version = "0.1.0"
+edition = "2024"
+build = "scripts/build.rs"
+
+[features]
+# default = ["deadlock-detect", "log-info", "no-smp"]
+
+log-warn  = []
+log-info  = ["log-warn"]
+log-debug = ["log-info"]
+log-trace = ["log-debug"]
+log-trace-syscall = []
+warn-unimplemented-syscall = []
+
+deadlock-detect = []
+no-smp = []
+nolock = ["no-smp"]
+swap-memory = []
+backtrace = []
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+
+[dependencies]
+buddy_system_allocator = { version = "0.9", default-features = false, features = ["use_spin"] }
+spin = "0.9"
+bitflags = "2.0"
+virtio-drivers = "0.7.5"
+cfg-if = "1.0"
+num_enum = { version = "0.5", default-features = false}
+downcast-rs = { version = "2.0.1", default-features = false , features = ["sync"]}
+device_tree_parser = "0.4.0"
+fdt = { git = "https://github.com/LRache/fdt-rust.git"}
+bitfield-struct = "0.8.0" 
+bitvec = { version = "1.0.1" , default-features = false, features = ["alloc"] }
+visionfive2-sd = { git = "https://github.com/os-module/visionfive2-sd.git", rev = "af75139" }
+lwext4_rust = { path = "./lib/lwext4_rust" }
+
+[build-dependencies]
+cc = "1.0"

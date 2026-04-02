@@ -1,0 +1,142 @@
+use core::time::Duration;
+use alloc::string::String;
+use alloc::sync::Arc;
+use visionfive2_sd::{Vf2SdDriver, SDIo, SleepOps};
+
+use crate::arch;
+use crate::arch::map_kernel_addr;
+use crate::kernel::mm::{MapPerm, page};
+use crate::driver::{BlockDriverOps, Device, DeviceType, DriverOps, DriverMatcher};
+use crate::kernel::event::timer;
+use crate::klib::SpinLock;
+use crate::kwarn;
+
+struct SDIOImpls {
+    pub base: usize
+}
+
+impl SDIo for SDIOImpls {
+    fn read_reg_at(&self, offset: usize) -> u32 {
+        let addr = (self.base + offset) as *const u32;
+        unsafe { addr.read_volatile() }
+    }
+
+    fn write_reg_at(&mut self, offset: usize, val: u32) {
+        let addr = (self.base + offset) as *mut u32;
+        unsafe {
+            arch::write_volatile(addr, val);
+        }
+    }
+
+    fn read_data_at(&self, offset: usize) -> u64 {
+        let addr = (self.base + offset) as *const u64;
+        unsafe { addr.read_volatile() }
+    }
+
+    fn write_data_at(&mut self, offset: usize, val: u64) {
+        let addr = (self.base + offset) as *mut u64;
+        unsafe {
+            addr.write_volatile(val);
+        }
+    }
+}
+
+struct SleepOpsImpls;
+
+impl SleepOps for SleepOpsImpls {
+    fn sleep_ms(ms: usize) {
+        timer::spin_delay(Duration::from_millis(ms as u64));
+    }
+
+    fn sleep_ms_until(ms: usize, f: impl FnMut() -> bool) {
+        timer::wait_until(Duration::from_millis(ms as u64), f);
+    }
+}
+
+pub struct Driver {
+    name: String,
+    inner: SpinLock<Vf2SdDriver<SDIOImpls, SleepOpsImpls>>
+}
+
+impl Driver {
+    pub fn new(name: String, base: usize) -> Self {
+        let inner = Vf2SdDriver::new(SDIOImpls { base });
+        Driver { 
+            name, 
+            inner: SpinLock::new(inner, "Driver::inner")
+        }
+    }
+
+    pub fn init(&self) -> Result<(), ()> {
+        self.inner.lock().init();
+
+        Ok(())
+    }
+}
+
+impl DriverOps for Driver {
+    fn device_type(&self) -> DeviceType {
+        DeviceType::Block
+    }
+
+    fn name(&self) -> &str {
+        "starfive_sdio"
+    }
+
+    fn device_name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn as_block_driver(self: Arc<Self>) -> Option<Arc<dyn BlockDriverOps>> {
+        Some(self)
+    }
+}
+
+impl BlockDriverOps for Driver {
+    fn read_block(&self, block: usize, buf: &mut [u8]) -> Result<(), ()> {
+        self.inner.lock().read_block(block, buf);
+
+        Ok(())
+    }
+
+    fn write_block(&self, block: usize, buf: &[u8]) -> Result<(), ()> {
+        self.inner.lock().write_block(block, buf);
+
+        Ok(())
+    }
+
+    fn get_block_size(&self) -> u32 {
+        512
+    }
+
+    fn get_block_count(&self) -> u64 {
+        // 4 GB
+        8388608
+    }
+}
+
+pub struct Matcher;
+
+impl DriverMatcher for Matcher {
+    fn try_match(&self, device: &Device) -> Option<Arc<dyn DriverOps>> {
+        device.match_compatible(&["snps,dw-mshc"])?;
+        
+        let (mmio_base, mmio_size) = device.mmio()?;
+        if mmio_base != 0x16020000 {
+            return None;
+        }
+
+        let pages = arch::page_count(mmio_size);
+        let kpage = page::alloc_contiguous(pages);
+        map_kernel_addr(kpage, mmio_base, mmio_size, MapPerm::RW);
+        
+        let driver = Driver::new(device.name().into(), kpage);
+        let r = driver.init();
+        if let Err(e) = r {
+            kwarn!("Failed to init starfive_sdio driver: {:?}", e);
+            None
+        } else {
+            Some(Arc::new(driver))
+        }
+    }
+}

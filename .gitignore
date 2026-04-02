@@ -50,3 +50,26 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# clang
+compile_commands.json
+
+*.dts
+*.dtb
+kernel.asm
+
+.cache
+
+/sdcard-*
+/alpine-*
+*.img
+*.log
+
+# Kconfig generated files
+.config*
+
+# Added by cargo
+
+/target
+/build
+Cargo.lock
